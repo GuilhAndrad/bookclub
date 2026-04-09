@@ -16,6 +16,7 @@ type Config struct {
 	DBUser             string
 	DBPassword         string
 	DBName             string
+	DBTimezone         string
 	DSN                string
 	JWTSecret          string
 	JWTExpirationHours int
@@ -34,6 +35,7 @@ func Load() (*Config, error) {
 		DBUser:     getEnv("DB_USER", "postgres"),
 		DBPassword: getEnv("DB_PASSWORD", ""),
 		DBName:     getEnv("DB_NAME", "bookclub"),
+		DBTimezone: getEnv("DB_TIMEZONE", "UTC"),
 		JWTSecret:  getEnv("JWT_SECRET", "change_me_in_production"),
 		ServerPort: getEnv("SERVER_PORT", "8080"),
 	}
@@ -55,8 +57,8 @@ func Load() (*Config, error) {
 // buildDSN constrói a string de conexão com o banco de dados.
 func (c *Config) buildDSN() string {
 	return fmt.Sprintf(
-		"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=America/Sao_Paulo",
-		c.DBHost, c.DBUser, c.DBPassword, c.DBName, c.DBPort,
+		"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=%s",
+		c.DBHost, c.DBUser, c.DBPassword, c.DBName, c.DBPort, c.DBTimezone,
 	)
 }
 

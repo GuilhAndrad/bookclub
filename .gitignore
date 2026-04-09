@@ -1,0 +1,55 @@
+# Binários compilados
+/bin/
+/dist/
+/bookclub-api
+/api
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Testes e cobertura
+*.test
+*.out
+coverage.txt
+*.coverprofile
+
+# Dependências (se não usar vendoring)
+vendor/
+
+# Arquivos de ambiente local (NUNCA commitar .env com segredos!)
+.env
+.env.local
+.env.*.local
+
+# Arquivos de configuração da IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Docker (volumes, etc, embora geralmente não fiquem na raiz)
+docker-compose.override.yml  # se tiver sobrescritas locais
+
+# Banco de dados SQLite local (se usar para testes)
+*.db
+*.sqlite
+*.sqlite3
+
+# Arquivos temporários do Go
+*.tmp
+
+# Arquivos de build do Go
+*.a
+
+# Output do delve (debugger)
+__debug_bin
