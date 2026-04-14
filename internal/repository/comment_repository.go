@@ -1,7 +1,11 @@
 package repository
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/GuilhAndrad/bookclub/internal/domain"
+	"github.com/GuilhAndrad/bookclub/pkg/pagination"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -17,19 +21,33 @@ func NewCommentRepository(db *gorm.DB) *CommentRepository {
 }
 
 // Create persiste um novo comentário no banco.
-func (r *CommentRepository) Create(comment *domain.Comment) error {
-	return r.db.Create(comment).Error
+func (r *CommentRepository) Create(ctx context.Context, comment *domain.Comment) error {
+	if err := r.db.WithContext(ctx).Create(comment).Error; err != nil {
+		return fmt.Errorf("comment_repository.Create: %w", err)
+	}
+	return nil
 }
 
-// FindByReviewID retorna todos os comentários de uma resenha em ordem cronológica.
-func (r *CommentRepository) FindByReviewID(reviewID uuid.UUID) ([]domain.Comment, error) {
+// FindByReviewID retorna uma página de comentários de uma resenha em ordem cronológica.
+// O preload de Author carrega apenas id e name — sem campos sensíveis do usuário.
+func (r *CommentRepository) FindByReviewID(ctx context.Context, reviewID uuid.UUID, p pagination.Params) ([]domain.Comment, int64, error) {
 	var comments []domain.Comment
-	err := r.db.
-		Preload("User", func(db *gorm.DB) *gorm.DB {
-			return db.Select("id, name, avatar_url")
-		}).
+	var total int64
+
+	if err := r.db.WithContext(ctx).Model(&domain.Comment{}).Where("review_id = ?", reviewID).Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("comment_repository.FindByReviewID count: %w", err)
+	}
+
+	err := r.db.WithContext(ctx).
+		Preload("Author").
 		Where("review_id = ?", reviewID).
 		Order("created_at ASC").
+		Limit(p.Limit).
+		Offset(p.Offset()).
 		Find(&comments).Error
-	return comments, err
+	if err != nil {
+		return nil, 0, fmt.Errorf("comment_repository.FindByReviewID: %w", err)
+	}
+
+	return comments, total, nil
 }

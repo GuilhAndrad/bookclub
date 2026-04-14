@@ -1,26 +1,28 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/GuilhAndrad/bookclub/internal/domain"
 	"github.com/GuilhAndrad/bookclub/internal/middleware"
 	"github.com/GuilhAndrad/bookclub/internal/service"
+	"github.com/GuilhAndrad/bookclub/pkg/pagination"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
 // reviewService define as operações necessárias para ReviewHandler.
 type reviewService interface {
-	ListByBook(bookID, requesterID uuid.UUID) ([]domain.Review, error)
-	ListByUser(userID uuid.UUID) ([]domain.Review, error)
-	Create(input service.CreateReviewInput) (*domain.Review, error)
-	Update(id, userID uuid.UUID, input service.UpdateReviewInput) error
-	Delete(id, userID uuid.UUID, isAdmin bool) error
-	Like(reviewID, userID uuid.UUID) error
-	Unlike(reviewID, userID uuid.UUID) error
-	ListComments(reviewID uuid.UUID) ([]domain.Comment, error)
-	CreateComment(reviewID, userID uuid.UUID, content string) (*domain.Comment, error)
+	ListByBook(ctx context.Context, bookID, requesterID uuid.UUID, p pagination.Params) (pagination.Page[domain.Review], error)
+	ListByUser(ctx context.Context, userID uuid.UUID, p pagination.Params) (pagination.Page[domain.Review], error)
+	Create(ctx context.Context, input service.CreateReviewInput) (*domain.Review, error)
+	Update(ctx context.Context, id, userID uuid.UUID, input service.UpdateReviewInput) error
+	Delete(ctx context.Context, id, userID uuid.UUID, isAdmin bool) error
+	Like(ctx context.Context, reviewID, userID uuid.UUID) error
+	Unlike(ctx context.Context, reviewID, userID uuid.UUID) error
+	ListComments(ctx context.Context, reviewID uuid.UUID, p pagination.Params) (pagination.Page[domain.Comment], error)
+	CreateComment(ctx context.Context, reviewID, userID uuid.UUID, content string) (*domain.Comment, error)
 }
 
 // ReviewHandler lida com as requisições de resenhas, likes e comentários.
@@ -34,8 +36,7 @@ func NewReviewHandler(svc reviewService) *ReviewHandler {
 }
 
 // ListReviews godoc
-// GET /books/:id/reviews
-// Retorna as resenhas de um livro com contagens de likes e comentários.
+// GET /books/:id/reviews?page=1&limit=20
 func (h *ReviewHandler) ListReviews(c *gin.Context) {
 	bookID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -43,18 +44,22 @@ func (h *ReviewHandler) ListReviews(c *gin.Context) {
 		return
 	}
 
-	reviews, err := h.svc.ListByBook(bookID, middleware.GetUserID(c))
+	p, ok := pagination.FromRequest(c)
+	if !ok {
+		return
+	}
+
+	page, err := h.svc.ListByBook(c.Request.Context(), bookID, middleware.GetUserID(c), p)
 	if err != nil {
 		respondError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"reviews": reviews})
+	c.JSON(http.StatusOK, page)
 }
 
 // ListUserReviews godoc
-// GET /users/:id/reviews
-// Retorna todas as resenhas escritas por um usuário.
+// GET /users/:id/reviews?page=1&limit=20
 func (h *ReviewHandler) ListUserReviews(c *gin.Context) {
 	userID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -62,18 +67,22 @@ func (h *ReviewHandler) ListUserReviews(c *gin.Context) {
 		return
 	}
 
-	reviews, err := h.svc.ListByUser(userID)
+	p, ok := pagination.FromRequest(c)
+	if !ok {
+		return
+	}
+
+	page, err := h.svc.ListByUser(c.Request.Context(), userID, p)
 	if err != nil {
 		respondError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"reviews": reviews})
+	c.JSON(http.StatusOK, page)
 }
 
 // CreateReview godoc
 // POST /books/:id/reviews
-// Cria uma resenha para o livro. Cada usuário pode ter apenas uma resenha por livro.
 func (h *ReviewHandler) CreateReview(c *gin.Context) {
 	bookID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -91,7 +100,7 @@ func (h *ReviewHandler) CreateReview(c *gin.Context) {
 		return
 	}
 
-	review, err := h.svc.Create(service.CreateReviewInput{
+	review, err := h.svc.Create(c.Request.Context(), service.CreateReviewInput{
 		BookID:  bookID,
 		UserID:  middleware.GetUserID(c),
 		Content: input.Content,
@@ -108,7 +117,6 @@ func (h *ReviewHandler) CreateReview(c *gin.Context) {
 
 // UpdateReview godoc
 // PUT /reviews/:id
-// Atualiza uma resenha do usuário autenticado. Campos omitidos não são alterados.
 func (h *ReviewHandler) UpdateReview(c *gin.Context) {
 	reviewID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -126,7 +134,7 @@ func (h *ReviewHandler) UpdateReview(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.Update(reviewID, middleware.GetUserID(c), service.UpdateReviewInput{
+	if err := h.svc.Update(c.Request.Context(), reviewID, middleware.GetUserID(c), service.UpdateReviewInput{
 		Content: input.Content,
 		Rating:  input.Rating,
 		Spoiler: input.Spoiler,
@@ -140,7 +148,6 @@ func (h *ReviewHandler) UpdateReview(c *gin.Context) {
 
 // DeleteReview godoc
 // DELETE /reviews/:id
-// Remove uma resenha. Administradores podem remover qualquer resenha.
 func (h *ReviewHandler) DeleteReview(c *gin.Context) {
 	reviewID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -149,6 +156,7 @@ func (h *ReviewHandler) DeleteReview(c *gin.Context) {
 	}
 
 	if err := h.svc.Delete(
+		c.Request.Context(),
 		reviewID,
 		middleware.GetUserID(c),
 		middleware.GetUserRole(c) == "admin",
@@ -162,7 +170,6 @@ func (h *ReviewHandler) DeleteReview(c *gin.Context) {
 
 // LikeReview godoc
 // POST /reviews/:id/like
-// Registra a curtida do usuário autenticado em uma resenha.
 func (h *ReviewHandler) LikeReview(c *gin.Context) {
 	reviewID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -170,7 +177,7 @@ func (h *ReviewHandler) LikeReview(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.Like(reviewID, middleware.GetUserID(c)); err != nil {
+	if err := h.svc.Like(c.Request.Context(), reviewID, middleware.GetUserID(c)); err != nil {
 		respondError(c, err)
 		return
 	}
@@ -180,7 +187,6 @@ func (h *ReviewHandler) LikeReview(c *gin.Context) {
 
 // UnlikeReview godoc
 // DELETE /reviews/:id/like
-// Remove a curtida do usuário autenticado de uma resenha.
 func (h *ReviewHandler) UnlikeReview(c *gin.Context) {
 	reviewID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -188,13 +194,16 @@ func (h *ReviewHandler) UnlikeReview(c *gin.Context) {
 		return
 	}
 
-	h.svc.Unlike(reviewID, middleware.GetUserID(c)) //nolint:errcheck
+	if err := h.svc.Unlike(c.Request.Context(), reviewID, middleware.GetUserID(c)); err != nil {
+		respondError(c, err)
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "curtida removida"})
 }
 
 // ListComments godoc
-// GET /reviews/:id/comments
-// Retorna os comentários de uma resenha em ordem cronológica.
+// GET /reviews/:id/comments?page=1&limit=20
 func (h *ReviewHandler) ListComments(c *gin.Context) {
 	reviewID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -202,18 +211,22 @@ func (h *ReviewHandler) ListComments(c *gin.Context) {
 		return
 	}
 
-	comments, err := h.svc.ListComments(reviewID)
+	p, ok := pagination.FromRequest(c)
+	if !ok {
+		return
+	}
+
+	page, err := h.svc.ListComments(c.Request.Context(), reviewID, p)
 	if err != nil {
 		respondError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"comments": comments})
+	c.JSON(http.StatusOK, page)
 }
 
 // CreateComment godoc
 // POST /reviews/:id/comments
-// Adiciona um comentário a uma resenha.
 func (h *ReviewHandler) CreateComment(c *gin.Context) {
 	reviewID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -229,7 +242,7 @@ func (h *ReviewHandler) CreateComment(c *gin.Context) {
 		return
 	}
 
-	comment, err := h.svc.CreateComment(reviewID, middleware.GetUserID(c), input.Content)
+	comment, err := h.svc.CreateComment(c.Request.Context(), reviewID, middleware.GetUserID(c), input.Content)
 	if err != nil {
 		respondError(c, err)
 		return

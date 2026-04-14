@@ -1,0 +1,687 @@
+### ============================================================
+### BookClub API — arquivo de testes HTTP
+### Compatível com: VS Code REST Client, IntelliJ HTTP Client
+###
+### Como usar:
+###   1. Suba a API: make run
+###   2. Execute os requests em ordem (os tokens são capturados
+###      automaticamente pelo REST Client via @variable)
+###   3. Substitua os IDs marcados com <COLE_AQUI> pelos
+###      valores retornados nas respostas anteriores
+### ============================================================
+
+@baseUrl = http://localhost:8080
+@adminToken    = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNjdjOGQwZDMtMzU0MC00YzA4LWJjNmUtNmY5NDllMjA2YzcyIiwicm9sZSI6ImFkbWluIiwiZXhwIjoxNzc2MzgxNTU2LCJpYXQiOjE3NzYxMjIzNTZ9.Vo1xv_s7a7_Qh1DTsg5ykxRkVJyEyH--IQDcncbw5Bs
+@memberToken   = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiYmE5MDBiMDQtN2E3MC00NmI2LWE5M2QtZmFmYTM2NzNkMmEwIiwicm9sZSI6Im1lbWJlciIsImV4cCI6MTc3NjM4MTkwNiwiaWF0IjoxNzc2MTIyNzA2fQ.qDnzyEptNkIuau9CLn6lsrdATAn0GqjQXVHw75i2mLo
+@memberId      = ba900b04-7a70-46b6-a93d-fafa3673d2a0
+@adminId       =
+@bookId        = e820e34c-5123-4b5e-aca6-f2574a7b9b4b
+@reviewId      =
+@commentId     =
+
+# ==============================================================
+# 1. HEALTH CHECK
+# ==============================================================
+
+### 1.1 Health check — deve retornar 200 OK
+GET {{baseUrl}}/health
+
+
+# ==============================================================
+# 2. CADASTRO DE USUÁRIOS
+# ==============================================================
+
+### 2.1 Registrar membro João
+# Deve retornar 201 — status: pending
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "Administro Jorge",
+  "email": "adminjorge@bookclub.com",
+  "password": "senha1234"
+}
+
+###
+
+### 2.2 Registrar membro Maria (será rejeitada)
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "Maria Souza",
+  "email": "maria@bookclub.com",
+  "password": "senha456"
+}
+
+###
+
+### 2.3 Tentar registrar com e-mail duplicado
+# Deve retornar 409 Conflict
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "João Duplicado",
+  "email": "joao@bookclub.com",
+  "password": "outrasenha"
+}
+
+###
+
+### 2.4 Tentar registrar com dados inválidos
+# Deve retornar 400 Bad Request — nome curto, e-mail inválido, senha curta
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "A",
+  "email": "nao-e-um-email",
+  "password": "123"
+}
+
+###
+
+
+# ==============================================================
+# 3. LOGIN — ANTES DA APROVAÇÃO
+# ==============================================================
+
+### 3.1 Login com usuário ainda pendente
+# Deve retornar 403 — cadastro aguardando aprovação
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "joao@bookclub.com",
+  "password": "senha123"
+}
+
+###
+
+### 3.2 Login com senha errada
+# Deve retornar 401 — não autorizado
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "joao@bookclub.com",
+  "password": "senha-errada"
+}
+
+###
+
+### 3.3 Login com e-mail inexistente
+# Deve retornar 401 — mesma mensagem que senha errada (não vaza info)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "naoexiste@bookclub.com",
+  "password": "qualquer"
+}
+
+###
+
+
+# ==============================================================
+# 4. LOGIN ADMIN
+# Obs: o primeiro admin precisa ser inserido diretamente no banco.
+# INSERT INTO users (id, name, email, password_hash, role, status)
+# VALUES (gen_random_uuid(), 'Admin', 'admin@bookclub.com',
+#         '<bcrypt_hash>', 'admin', 'approved');
+# ==============================================================
+
+### 4.1 Login admin
+# Copie o token retornado e cole em @adminToken acima
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "adminjorge@bookclub.com",
+  "password": "senha1234"
+}
+
+###
+
+
+# ==============================================================
+# 5. FLUXO ADMIN — APROVAÇÃO DE MEMBROS
+# ==============================================================
+
+### 5.1 Listar membros pendentes de aprovação
+# Copie o id de João e cole em @memberId acima
+GET {{baseUrl}}/admin/members/pending
+Authorization: Bearer {{adminToken}}
+
+###
+
+### 5.2 Listar pendentes com paginação
+GET {{baseUrl}}/admin/members/pending?page=1&limit=10
+Authorization: Bearer {{adminToken}}
+
+###
+
+### 5.3 Aprovar João
+# Substitua <COLE_AQUI> pelo id de João retornado em 5.1
+PUT {{baseUrl}}/admin/members/ba900b04-7a70-46b6-a93d-fafa3673d2a0/approve
+Authorization: Bearer {{adminToken}}
+
+###
+
+### 5.4 Rejeitar Maria
+# Substitua <COLE_AQUI> pelo id de Maria retornado em 5.1
+PUT {{baseUrl}}/admin/members/999b0965-a683-4b56-a686-13bf4670f972/reject
+Authorization: Bearer {{adminToken}}
+
+###
+
+### 5.5 Tentar aprovar ID inexistente
+# Deve retornar 404 Not Found
+PUT {{baseUrl}}/admin/members/00000000-0000-0000-0000-000000000000/approve
+Authorization: Bearer {{adminToken}}
+
+###
+
+
+# ==============================================================
+# 6. FLUXO ADMIN — CADASTRO DE LIVROS
+# ==============================================================
+
+### 6.1 Cadastrar livro do mês
+# Copie o id retornado e cole em @bookId acima
+POST {{baseUrl}}/admin/books
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "title": "O Senhor dos Anéis",
+  "author": "J.R.R. Tolkien",
+  "description": "Uma épica jornada pela Terra Média em busca da destruição do Um Anel.",
+  "cover_url": "https://example.com/senhor-dos-aneis.jpg",
+  "month": 4,
+  "year": 2026
+}
+
+###
+
+### 6.2 Tentar cadastrar livro para o mesmo mês
+# Deve retornar 409 Conflict
+POST {{baseUrl}}/admin/books
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "title": "Outro Livro",
+  "author": "Outro Autor",
+  "month": 4,
+  "year": 2026
+}
+
+###
+
+### 6.3 Tentar cadastrar livro sem autenticação
+# Deve retornar 401 Unauthorized
+POST {{baseUrl}}/admin/books
+Content-Type: application/json
+
+{
+  "title": "Livro Sem Token",
+  "author": "Autor",
+  "month": 5,
+  "year": 2026
+}
+
+###
+
+### 6.4 Atualizar dados do livro
+# Substitua <COLE_AQUI> pelo bookId retornado em 6.1
+PUT {{baseUrl}}/admin/books/e820e34c-5123-4b5e-aca6-f2574a7b9b4b
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "description": "Uma épica jornada pela Terra Média — edição revisada pelo clube."
+}
+
+###
+
+
+# ==============================================================
+# 7. LOGIN MEMBRO APROVADO
+# ==============================================================
+
+### 7.1 Login de João após aprovação
+# Copie o token e cole em @memberToken; o id em @memberId
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "joao@bookclub.com",
+  "password": "outrasenha"
+}
+
+###
+
+### 7.2 Login de Maria rejeitada
+# Deve retornar 403 — acesso negado pelo administrador
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "maria@bookclub.com",
+  "password": "senha456"
+}
+
+###
+
+
+# ==============================================================
+# 8. LIVROS — ACESSO DE MEMBRO
+# ==============================================================
+
+### 8.1 Listar todos os livros
+GET {{baseUrl}}/books
+Authorization: Bearer {{memberToken}}
+
+###
+
+### 8.2 Listar com paginação
+GET {{baseUrl}}/books?page=1&limit=5
+Authorization: Bearer {{memberToken}}
+
+###
+
+### 8.3 Livro do mês atual
+GET {{baseUrl}}/books/current
+Authorization: Bearer {{memberToken}}
+
+###
+
+### 8.4 Detalhe de um livro com estatísticas
+# Substitua <COLE_AQUI> pelo bookId
+GET {{baseUrl}}/books/e820e34c-5123-4b5e-aca6-f2574a7b9b4b
+Authorization: Bearer {{memberToken}}
+
+###
+
+### 8.5 Tentar acessar livro com ID inválido
+# Deve retornar 400 Bad Request
+GET {{baseUrl}}/books/id-invalido
+Authorization: Bearer {{memberToken}}
+
+###
+
+### 8.6 Membro tenta cadastrar livro
+# Deve retornar 403 Forbidden
+POST {{baseUrl}}/admin/books
+Authorization: Bearer {{memberToken}}
+Content-Type: application/json
+
+{
+  "title": "Livro Não Autorizado",
+  "author": "Membro",
+  "month": 5,
+  "year": 2026
+}
+
+###
+
+
+# ==============================================================
+# 9. RESENHAS
+# ==============================================================
+
+### 9.1 Criar resenha para o livro do mês
+# Copie o id retornado e cole em @reviewId acima
+# Substitua <COLE_AQUI> pelo bookId
+POST {{baseUrl}}/books/e820e34c-5123-4b5e-aca6-f2574a7b9b4b/reviews
+Authorization: Bearer {{memberToken}}
+Content-Type: application/json
+
+{
+  "content": "Uma leitura épica que transporta o leitor para um mundo completamente diferente. Tolkien construiu um universo riquíssimo em detalhes, com mitologia própria e personagens inesquecíveis.",
+  "rating": 5,
+  "spoiler": false
+}
+
+###
+
+### 9.2 Tentar criar segunda resenha para o mesmo livro
+# Deve retornar 409 Conflict
+# Substitua <COLE_AQUI> pelo bookId
+POST {{baseUrl}}/books/e820e34c-5123-4b5e-aca6-f2574a7b9b4b/reviews
+Authorization: Bearer {{memberToken}}
+Content-Type: application/json
+
+{
+  "content": "Tentando criar segunda resenha para o mesmo livro.",
+  "rating": 3,
+  "spoiler": false
+}
+
+###
+
+### 9.3 Criar resenha com conteúdo muito curto
+# Deve retornar 400 Bad Request — min=10 caracteres
+# Substitua <COLE_AQUI> pelo bookId
+POST {{baseUrl}}/books/e820e34c-5123-4b5e-aca6-f2574a7b9b4b/reviews
+Authorization: Bearer {{memberToken}}
+Content-Type: application/json
+
+{
+  "content": "Curto.",
+  "rating": 4,
+  "spoiler": false
+}
+
+###
+
+### 9.4 Criar resenha com nota fora do intervalo
+# Deve retornar 400 Bad Request — rating max=5
+# Substitua <COLE_AQUI> pelo bookId
+POST {{baseUrl}}/books/e820e34c-5123-4b5e-aca6-f2574a7b9b4b/reviews
+Authorization: Bearer {{memberToken}}
+Content-Type: application/json
+
+{
+  "content": "Tentando dar nota maior que 5 estrelas para este livro incrível.",
+  "rating": 6,
+  "spoiler": false
+}
+
+###
+
+### 9.5 Listar resenhas do livro
+# Substitua <COLE_AQUI> pelo bookId
+GET {{baseUrl}}/books/e820e34c-5123-4b5e-aca6-f2574a7b9b4b/reviews
+Authorization: Bearer {{memberToken}}
+
+###
+
+### 9.6 Listar resenhas com paginação
+# Substitua <COLE_AQUI> pelo bookId
+GET {{baseUrl}}/books/e820e34c-5123-4b5e-aca6-f2574a7b9b4b/reviews?page=1&limit=10
+Authorization: Bearer {{memberToken}}
+
+###
+
+### 9.7 Atualizar a própria resenha
+# Substitua <COLE_AQUI> pelo reviewId
+PUT {{baseUrl}}/reviews/eb1929ff-7c92-41d3-be9d-3c86e70cc35e
+Authorization: Bearer {{memberToken}}
+Content-Type: application/json
+
+{
+  "content": "Releitura ainda mais impressionante. Tolkien construiu um universo riquíssimo — cada página revela um novo detalhe da mitologia da Terra Média.",
+  "rating": 5,
+  "spoiler": false
+}
+
+###
+
+### 9.8 Admin tenta editar resenha de outro usuário
+# Deve retornar 403 Forbidden — apenas o autor pode editar
+# Substitua <COLE_AQUI> pelo reviewId
+PUT {{baseUrl}}/reviews/eb1929ff-7c92-41d3-be9d-3c86e70cc35e
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "content": "Admin tentando sobrescrever resenha do membro.",
+  "rating": 1
+}
+
+###
+
+
+# ==============================================================
+# 10. LIKES
+# ==============================================================
+
+### 10.1 Admin curte a resenha de João
+# Substitua <COLE_AQUI> pelo reviewId
+POST {{baseUrl}}/reviews/eb1929ff-7c92-41d3-be9d-3c86e70cc35e/like
+Authorization: Bearer {{adminToken}}
+
+###
+
+### 10.2 Tentar curtir a mesma resenha novamente
+# Deve retornar 409 Conflict
+# Substitua <COLE_AQUI> pelo reviewId
+POST {{baseUrl}}/reviews/eb1929ff-7c92-41d3-be9d-3c86e70cc35e/like
+Authorization: Bearer {{adminToken}}
+
+###
+
+### 10.3 Verificar likes na listagem de resenhas
+# O campo likes_count deve ser 1 e liked_by_me depende do token usado
+# Substitua <COLE_AQUI> pelo bookId
+GET {{baseUrl}}/books/eb1929ff-7c92-41d3-be9d-3c86e70cc35e/reviews
+Authorization: Bearer {{adminToken}}
+
+###
+
+### 10.4 Remover curtida
+# Substitua <COLE_AQUI> pelo reviewId
+DELETE {{baseUrl}}/reviews/eb1929ff-7c92-41d3-be9d-3c86e70cc35e/like
+Authorization: Bearer {{adminToken}}
+
+###
+
+
+# ==============================================================
+# 11. COMENTÁRIOS
+# ==============================================================
+
+### 11.1 Adicionar comentário na resenha
+# Copie o id retornado e cole em @commentId acima
+# Substitua <COLE_AQUI> pelo reviewId
+POST {{baseUrl}}/reviews/eb1929ff-7c92-41d3-be9d-3c86e70cc35e/comments
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "content": "Concordo totalmente! A construção do universo é o ponto mais impressionante da obra."
+}
+
+###
+
+### 11.2 João responde o comentário
+# Substitua <COLE_AQUI> pelo reviewId
+POST {{baseUrl}}/reviews/<COLE_AQUI>/comments
+Authorization: Bearer {{memberToken}}
+Content-Type: application/json
+
+{
+  "content": "Obrigado! Sim, os apêndices mostram o quanto ele pensou em cada detalhe."
+}
+
+###
+
+### 11.3 Tentar comentar com conteúdo vazio
+# Deve retornar 400 Bad Request
+# Substitua <COLE_AQUI> pelo reviewId
+POST {{baseUrl}}/reviews/<COLE_AQUI>/comments
+Authorization: Bearer {{memberToken}}
+Content-Type: application/json
+
+{
+  "content": ""
+}
+
+###
+
+### 11.4 Listar comentários da resenha
+# Substitua <COLE_AQUI> pelo reviewId
+GET {{baseUrl}}/reviews/<COLE_AQUI>/comments
+Authorization: Bearer {{memberToken}}
+
+###
+
+### 11.5 Listar comentários com paginação
+# Substitua <COLE_AQUI> pelo reviewId
+GET {{baseUrl}}/reviews/<COLE_AQUI>/comments?page=1&limit=5
+Authorization: Bearer {{memberToken}}
+
+###
+
+
+# ==============================================================
+# 12. PERFIL DE USUÁRIO
+# ==============================================================
+
+### 12.1 Ver próprio perfil com estatísticas
+# Substitua <COLE_AQUI> pelo memberId
+GET {{baseUrl}}/users/ba900b04-7a70-46b6-a93d-fafa3673d2a0/profile
+Authorization: Bearer {{memberToken}}
+
+###
+
+### 12.2 Ver resenhas do usuário
+# Substitua <COLE_AQUI> pelo memberId
+GET {{baseUrl}}/users/ba900b04-7a70-46b6-a93d-fafa3673d2a0/reviews
+Authorization: Bearer {{memberToken}}
+
+###
+
+### 12.3 Ver resenhas com paginação
+# Substitua <COLE_AQUI> pelo memberId
+GET {{baseUrl}}/users/ba900b04-7a70-46b6-a93d-fafa3673d2a0/reviews?page=1&limit=10
+Authorization: Bearer {{memberToken}}
+
+###
+
+### 12.4 Atualizar perfil
+PUT {{baseUrl}}/users/me/profile
+Authorization: Bearer {{memberToken}}
+Content-Type: application/json
+
+{
+  "bio": "Leitor ávido de fantasia e ficção científica. Participo do clube há 1 ano.",
+  "favorite_genre": "Fantasia"
+}
+
+###
+
+### 12.5 Confirmar atualização do perfil
+# Substitua <COLE_AQUI> pelo memberId
+GET {{baseUrl}}/users/ba900b04-7a70-46b6-a93d-fafa3673d2a0/profile
+Authorization: Bearer {{memberToken}}
+
+###
+
+### 12.6 Ver perfil com ID inválido
+# Deve retornar 400 Bad Request
+GET {{baseUrl}}/users/id-invalido/profile
+Authorization: Bearer {{memberToken}}
+
+###
+
+### 12.7 Ver perfil de usuário inexistente
+# Deve retornar 404 Not Found
+GET {{baseUrl}}/users/00000000-0000-0000-0000-000000000000/profile
+Authorization: Bearer {{memberToken}}
+
+###
+
+
+# ==============================================================
+# 13. RESENHAS — DELEÇÃO
+# ==============================================================
+
+### 13.1 Admin deleta a resenha de João (permitido)
+# Substitua <COLE_AQUI> pelo reviewId
+DELETE {{baseUrl}}/reviews/<COLE_AQUI>
+Authorization: Bearer {{adminToken}}
+
+###
+
+### 13.2 Recriar a resenha após deleção
+# Substitua <COLE_AQUI> pelo bookId
+POST {{baseUrl}}/books/<COLE_AQUI>/reviews
+Authorization: Bearer {{memberToken}}
+Content-Type: application/json
+
+{
+  "content": "Resenha recriada após deleção pelo admin. Uma obra atemporal que todo leitor deveria conhecer.",
+  "rating": 5,
+  "spoiler": false
+}
+
+###
+
+### 13.3 João tenta deletar própria resenha — substitua o id pelo novo reviewId
+PUT {{baseUrl}}/reviews/<COLE_AQUI>
+Authorization: Bearer {{memberToken}}
+Content-Type: application/json
+
+{
+  "content": "Atualizando antes de deletar."
+}
+
+###
+
+
+# ==============================================================
+# 14. TOKEN — REFRESH E LOGOUT
+# ==============================================================
+
+### 14.1 Renovar token sem fazer login novamente
+POST {{baseUrl}}/auth/refresh
+Authorization: Bearer {{memberToken}}
+
+###
+
+### 14.2 Logout — revoga o token atual
+POST {{baseUrl}}/auth/logout
+Authorization: Bearer {{memberToken}}
+
+###
+
+### 14.3 Tentar usar o token revogado após logout
+# Deve retornar 401 Unauthorized
+GET {{baseUrl}}/books
+Authorization: Bearer {{memberToken}}
+
+###
+
+
+# ==============================================================
+# 15. SEGURANÇA — CENÁRIOS DE ERRO
+# ==============================================================
+
+### 15.1 Acesso sem token
+# Deve retornar 401 Unauthorized
+GET {{baseUrl}}/books
+
+###
+
+### 15.2 Token completamente inválido
+# Deve retornar 401 Unauthorized
+GET {{baseUrl}}/books
+Authorization: Bearer token.invalido.aqui
+
+###
+
+### 15.3 Membro tenta acessar rota de admin
+# Deve retornar 403 Forbidden
+# Faça login novamente como João para obter um token válido antes deste teste
+GET {{baseUrl}}/admin/members/pending
+Authorization: Bearer {{memberToken}}
+
+###
+
+### 15.4 Paginação inválida — page=0
+# Deve retornar 400 Bad Request
+GET {{baseUrl}}/books?page=0
+Authorization: Bearer {{adminToken}}
+
+###
+
+### 15.5 Paginação inválida — limit negativo
+# Deve retornar 400 Bad Request
+GET {{baseUrl}}/books?limit=-1
+Authorization: Bearer {{adminToken}}
+
+###

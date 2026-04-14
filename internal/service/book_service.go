@@ -1,24 +1,26 @@
 package service
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/GuilhAndrad/bookclub/internal/domain"
 	"github.com/GuilhAndrad/bookclub/pkg/apperr"
+	"github.com/GuilhAndrad/bookclub/pkg/pagination"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 // bookRepo define as operações de repositório necessárias para BookService.
 type bookRepo interface {
-	Create(book *domain.Book) error
-	FindAll() ([]domain.Book, error)
-	FindByID(id uuid.UUID) (*domain.Book, error)
-	FindByMonthYear(month, year int) (*domain.Book, error)
-	Update(id uuid.UUID, updates map[string]interface{}) error
-	CountReviews(bookID uuid.UUID) (int64, error)
-	AvgRating(bookID uuid.UUID) (float64, error)
+	Create(ctx context.Context, book *domain.Book) error
+	FindAll(ctx context.Context, p pagination.Params) ([]domain.Book, int64, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*domain.Book, error)
+	FindByMonthYear(ctx context.Context, month, year int) (*domain.Book, error)
+	Update(ctx context.Context, id uuid.UUID, updates map[string]interface{}) error
+	GetStats(ctx context.Context, bookID uuid.UUID) (count int64, avg float64, err error)
 }
 
 // BookService gerencia as operações sobre livros do clube.
@@ -44,7 +46,6 @@ type CreateBookInput struct {
 	Author      string
 	Description string
 	CoverURL    string
-	ISBN        string
 	Month       int
 	Year        int
 	CreatedByID uuid.UUID
@@ -58,30 +59,36 @@ type UpdateBookInput struct {
 	CoverURL    string
 }
 
-// ListBooks retorna todos os livros cadastrados.
-func (s *BookService) ListBooks() ([]domain.Book, error) {
-	return s.books.FindAll()
+// ListBooks retorna uma página de livros cadastrados.
+func (s *BookService) ListBooks(ctx context.Context, p pagination.Params) (pagination.Page[domain.Book], error) {
+	books, total, err := s.books.FindAll(ctx, p)
+	if err != nil {
+		return pagination.Page[domain.Book]{}, fmt.Errorf("book_service.ListBooks: %w", err)
+	}
+	return pagination.New(books, total, p), nil
 }
 
 // GetBook retorna um livro com suas estatísticas de avaliação.
 // Retorna apperr.ErrNotFound se o livro não existir.
-func (s *BookService) GetBook(id uuid.UUID) (*BookDetailOutput, error) {
-	book, err := s.books.FindByID(id)
+func (s *BookService) GetBook(ctx context.Context, id uuid.UUID) (*BookDetailOutput, error) {
+	book, err := s.books.FindByID(ctx, id)
 	if err != nil {
 		return nil, apperr.ErrNotFound
 	}
 
-	count, _ := s.books.CountReviews(id)
-	avg, _ := s.books.AvgRating(id)
+	count, avg, err := s.books.GetStats(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("book_service.GetBook stats: %w", err)
+	}
 
 	return &BookDetailOutput{Book: book, ReviewCount: count, AvgRating: avg}, nil
 }
 
 // GetCurrentBook retorna o livro do mês corrente.
 // Retorna apperr.ErrNotFound se nenhum livro estiver cadastrado para o mês atual.
-func (s *BookService) GetCurrentBook() (*domain.Book, error) {
+func (s *BookService) GetCurrentBook(ctx context.Context) (*domain.Book, error) {
 	now := time.Now()
-	book, err := s.books.FindByMonthYear(int(now.Month()), now.Year())
+	book, err := s.books.FindByMonthYear(ctx, int(now.Month()), now.Year())
 	if err != nil {
 		return nil, apperr.ErrNotFound
 	}
@@ -90,13 +97,13 @@ func (s *BookService) GetCurrentBook() (*domain.Book, error) {
 
 // CreateBook cadastra um novo livro para o mês especificado.
 // Retorna apperr.ErrConflict se já existir um livro para o mesmo mês e ano.
-func (s *BookService) CreateBook(input CreateBookInput) (*domain.Book, error) {
-	_, err := s.books.FindByMonthYear(input.Month, input.Year)
+func (s *BookService) CreateBook(ctx context.Context, input CreateBookInput) (*domain.Book, error) {
+	_, err := s.books.FindByMonthYear(ctx, input.Month, input.Year)
 	if err == nil {
 		return nil, apperr.ErrConflict
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
+		return nil, fmt.Errorf("book_service.CreateBook check: %w", err)
 	}
 
 	book := &domain.Book{
@@ -104,14 +111,13 @@ func (s *BookService) CreateBook(input CreateBookInput) (*domain.Book, error) {
 		Author:      input.Author,
 		Description: input.Description,
 		CoverURL:    input.CoverURL,
-		ISBN:        input.ISBN,
 		Month:       input.Month,
 		Year:        input.Year,
 		CreatedByID: input.CreatedByID,
 	}
 
-	if err := s.books.Create(book); err != nil {
-		return nil, err
+	if err := s.books.Create(ctx, book); err != nil {
+		return nil, fmt.Errorf("book_service.CreateBook: %w", err)
 	}
 
 	return book, nil
@@ -119,16 +125,19 @@ func (s *BookService) CreateBook(input CreateBookInput) (*domain.Book, error) {
 
 // UpdateBook atualiza os dados de um livro existente. Campos vazios são ignorados.
 // Retorna apperr.ErrNotFound se o livro não existir.
-func (s *BookService) UpdateBook(id uuid.UUID, input UpdateBookInput) error {
-	if _, err := s.books.FindByID(id); err != nil {
+func (s *BookService) UpdateBook(ctx context.Context, id uuid.UUID, input UpdateBookInput) error {
+	if _, err := s.books.FindByID(ctx, id); err != nil {
 		return apperr.ErrNotFound
 	}
 
-	updates := make(map[string]interface{})
+	updates := make(map[string]interface{}, 4)
 	if input.Title != ""       { updates["title"] = input.Title }
 	if input.Author != ""      { updates["author"] = input.Author }
 	if input.Description != "" { updates["description"] = input.Description }
 	if input.CoverURL != ""    { updates["cover_url"] = input.CoverURL }
 
-	return s.books.Update(id, updates)
+	if err := s.books.Update(ctx, id, updates); err != nil {
+		return fmt.Errorf("book_service.UpdateBook: %w", err)
+	}
+	return nil
 }

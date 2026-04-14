@@ -9,13 +9,13 @@ import (
 
 // Comment representa um comentário feito em uma resenha.
 type Comment struct {
-	ID        uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
-	ReviewID  uuid.UUID `gorm:"type:uuid;not null"   json:"review_id"`
-	UserID    uuid.UUID `gorm:"type:uuid;not null"   json:"user_id"`
-	Content   string    `gorm:"not null"             json:"content"`
-	User      User      `gorm:"foreignKey:UserID"    json:"user,omitempty"`
-	CreatedAt time.Time `                            json:"created_at"`
-	UpdatedAt time.Time `                            json:"updated_at"`
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey"      json:"id"`
+	ReviewID  uuid.UUID `gorm:"type:uuid;not null;index"  json:"review_id"`
+	UserID    uuid.UUID `gorm:"type:uuid;not null"        json:"user_id"`
+	Content   string    `gorm:"not null"                  json:"content"`
+	User      User      `gorm:"foreignKey:UserID"         json:"user,omitempty"`
+	CreatedAt time.Time `gorm:"index"                     json:"created_at"`
+	UpdatedAt time.Time `                                  json:"updated_at"`
 }
 
 // BeforeCreate popula o UUID antes de persistir caso ainda não tenha sido definido.

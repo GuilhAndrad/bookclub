@@ -1,22 +1,24 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/GuilhAndrad/bookclub/internal/domain"
 	"github.com/GuilhAndrad/bookclub/internal/middleware"
 	"github.com/GuilhAndrad/bookclub/internal/service"
+	"github.com/GuilhAndrad/bookclub/pkg/pagination"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
 // bookService define as operações necessárias para BookHandler.
 type bookService interface {
-	ListBooks() ([]domain.Book, error)
-	GetBook(id uuid.UUID) (*service.BookDetailOutput, error)
-	GetCurrentBook() (*domain.Book, error)
-	CreateBook(input service.CreateBookInput) (*domain.Book, error)
-	UpdateBook(id uuid.UUID, input service.UpdateBookInput) error
+	ListBooks(ctx context.Context, p pagination.Params) (pagination.Page[domain.Book], error)
+	GetBook(ctx context.Context, id uuid.UUID) (*service.BookDetailOutput, error)
+	GetCurrentBook(ctx context.Context) (*domain.Book, error)
+	CreateBook(ctx context.Context, input service.CreateBookInput) (*domain.Book, error)
+	UpdateBook(ctx context.Context, id uuid.UUID, input service.UpdateBookInput) error
 }
 
 // BookHandler lida com as requisições relacionadas a livros.
@@ -30,22 +32,28 @@ func NewBookHandler(svc bookService) *BookHandler {
 }
 
 // ListBooks godoc
-// GET /books
-// Retorna todos os livros cadastrados, do mais recente ao mais antigo.
+// GET /books?page=1&limit=20
+// Retorna uma página de livros cadastrados.
 func (h *BookHandler) ListBooks(c *gin.Context) {
-	books, err := h.svc.ListBooks()
+	p, ok := pagination.FromRequest(c)
+	if !ok {
+		return
+	}
+
+	page, err := h.svc.ListBooks(c.Request.Context(), p)
 	if err != nil {
 		respondError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"books": books})
+
+	c.JSON(http.StatusOK, page)
 }
 
 // GetCurrentBook godoc
 // GET /books/current
 // Retorna o livro do mês corrente.
 func (h *BookHandler) GetCurrentBook(c *gin.Context) {
-	book, err := h.svc.GetCurrentBook()
+	book, err := h.svc.GetCurrentBook(c.Request.Context())
 	if err != nil {
 		respondError(c, err)
 		return
@@ -63,7 +71,7 @@ func (h *BookHandler) GetBook(c *gin.Context) {
 		return
 	}
 
-	out, err := h.svc.GetBook(id)
+	out, err := h.svc.GetBook(c.Request.Context(), id)
 	if err != nil {
 		respondError(c, err)
 		return
@@ -81,7 +89,6 @@ func (h *BookHandler) CreateBook(c *gin.Context) {
 		Author      string `json:"author" binding:"required"`
 		Description string `json:"description"`
 		CoverURL    string `json:"cover_url"`
-		ISBN        string `json:"isbn"`
 		Month       int    `json:"month" binding:"required,min=1,max=12"`
 		Year        int    `json:"year"  binding:"required"`
 	}
@@ -90,12 +97,11 @@ func (h *BookHandler) CreateBook(c *gin.Context) {
 		return
 	}
 
-	book, err := h.svc.CreateBook(service.CreateBookInput{
+	book, err := h.svc.CreateBook(c.Request.Context(), service.CreateBookInput{
 		Title:       input.Title,
 		Author:      input.Author,
 		Description: input.Description,
 		CoverURL:    input.CoverURL,
-		ISBN:        input.ISBN,
 		Month:       input.Month,
 		Year:        input.Year,
 		CreatedByID: middleware.GetUserID(c),
@@ -129,7 +135,7 @@ func (h *BookHandler) UpdateBook(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.UpdateBook(id, service.UpdateBookInput{
+	if err := h.svc.UpdateBook(c.Request.Context(), id, service.UpdateBookInput{
 		Title:       input.Title,
 		Author:      input.Author,
 		Description: input.Description,
